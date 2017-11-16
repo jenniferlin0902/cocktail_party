@@ -104,7 +104,7 @@ class cocktailData:
 
     @param
     self.n_recipe - number of recipes
-    self.raw_data - list of recipe dictionary {[ingredient name]:[qty]}
+    self.raw_data - list of recipe dictionary [{ingredient name:(unit, qty)}]
     self.n_ingredient - total number of distinct ingredient
     self.ingredients - {ingredient: (frequency, set(unit)}
     self.recipes - list of recipe ingredient vector
@@ -141,8 +141,17 @@ class cocktailData:
     def get_recipe_raw(self, id):
         return self.raw_data[id]
 
+    def get_recipes_ingredient_only(self):
+        result = []
+        for recipe in self.raw_data:
+            result.append(recipe.keys())
+        return result
+
     def get_recipes_binary(self):
         return list(self.recipes)
+
+    def get_recipes_binary_x(self):
+        return list([r[0] for r in self.recipes])
 
     def generate_fake(self, n):
         num_ingredients = [3,4,5,6]
