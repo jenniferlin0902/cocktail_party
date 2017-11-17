@@ -15,10 +15,10 @@ class cocktailSVMClassifier:
         self.data = train_data
         self.clf = svm.SVC()
 
-    def train(self, verbose=0, validate=False):
-        n_fake = self.data.size
+    def train(self, verbose=0, validate=0):
+        n_fake = self.data.n_recipe
         train= self.data.get_recipes_binary() + self.data.generate_fake(n_fake)
-        print "--- training svm with {} real data and {} fake data ---".format(self.data.size, n_fake)
+        print "--- training svm with {} real data and {} fake data ---".format(self.data.n_recipe, n_fake)
         train_x = [t[0] for t in train]
         train_y = [t[1] for t in train]
         if validate:
@@ -30,15 +30,19 @@ class cocktailSVMClassifier:
         print "--- done training svm classifier ---"
         return score
 
+    '''
+    if y == None, assume its a cocktailData type
+    else, x, and y should be an array
+    '''
     def test(self, data, y=None):
         if y:
             test_x = data
             test_y = y
         else:
-            test_x = [d[0] for d in data]
-            test_y = [d[1] for d in data]
+            test_x = data.get_recipes_binary_x()
+            test_y = [1 for i in range(data.n_recipe)]
+        print "---- testing {} recipe -----".format(len(test_x))
         predict_y = self.clf.predict(test_x)
-        #print predict_y
         err = 0
         for i, y in enumerate(predict_y):
             if y != test_y[i]:

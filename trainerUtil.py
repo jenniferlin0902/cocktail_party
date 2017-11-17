@@ -18,6 +18,7 @@ def retrieveData(inputFile, useTitles = 0, simplifyIngredients = 1, removeBrandi
     options to remove branding (e.g., read only Bourbon, not Bulleit Bourbon),
     remove recipe title, and remove quantity.
     """
+    print "Importing data from {}".format(inputFile)
     # List of all recipes to be returned at the end
     recipes = []
     f = open(inputFile, 'r')
@@ -56,12 +57,15 @@ def retrieveData(inputFile, useTitles = 0, simplifyIngredients = 1, removeBrandi
                 else:
                     ingredient = branding[0]
             ingredientwords = ingredient.split(' ')
+            if ("" in ingredientwords) or (" " in ingredientwords):
+                ingredientwords = [x for x in ingredientwords if (x != "") and x != " "]
             try:
                 amt = float(ingredientwords[0])
                 ingredientwords.pop(0)
             except ValueError:
                 amt = 1
-            key = ' '.join(ingredientwords[1:]).lower().rstrip()
+
+            key = ' '.join(ingredientwords[1:]).lower().rstrip().lstrip()
             recipe[key] = (amt, ingredientwords[0])# ingredient : (amt, unit)
         recipes.append(recipe)
     return recipes
@@ -75,7 +79,7 @@ def split_data():
     random.shuffle(all)
     classifier = all[:n_classifier]
     count = 0
-    test_out = open("cocktail_test.txt", "w")
+    test_out = open("cocktail_medium_random.txt", "w")
     train_out = open("cocktail_train.txt", "w")
 
     with open("cocktail_all.txt") as f:
@@ -110,29 +114,39 @@ class cocktailData:
     self.recipes - list of recipe ingredient vector
     '''
 
-    def __init__(self, file):
+    def __init__(self, file, ingredients=None):
         if not os.path.exists(file):
             print "ERROR: training data file {} does not exist".format(file)
+            self.raw_data = None
         else:
             self.raw_data = retrieveData(file, simplifyIngredients=1, removeBranding=1)
-            self.ingredients = {}
-            for recipe in self.raw_data:
-                for k, v in recipe.iteritems():
-                    if k not in self.ingredients:
-                        self.ingredients[k] = [0, set([v[1]])] #(count, unit list)
-                    else:
+            # fist, parse ingredients
+            if ingredients == None:
+                self.ingredients = {}
+                for recipe in self.raw_data:
+                    for k, v in recipe.iteritems():
+                        if k not in self.ingredients:
+                            self.ingredients[k] = [0, set([v[1]])] #(count, unit list)
+                        else:
                         # otherwise, increment count, and keep track of unit
-                        self.ingredients[k][0] += 1
-                        self.ingredients[k][1].add(v[1])
+                            self.ingredients[k][0] += 1
+                            self.ingredients[k][1].add(v[1])
+            # or import from a trained data set
+            else:
+                self.ingredients = dict(ingredients)
             self.n_recipe = len(self.raw_data)
             self.n_ingredient = len(self.ingredients.keys())
-        self.recipes = []
-        for recipe in self.raw_data:
-            recipe_vector = [0] * self.n_ingredient
-            for l in recipe:
-                recipe_vector[self.ingredients.keys().index(l)] = 1
-            self.recipes.append((recipe_vector, 1))
-        self.size = len(self.recipes)
+            self.recipes = []
+            err = 0
+            for recipe in self.raw_data:
+                recipe_vector = [0] * self.n_ingredient
+                for l in recipe:
+                    try:
+                        recipe_vector[self.ingredients.keys().index(l)] = 1
+                    except:
+                        err += 1
+                        print "found weird ingredient {} {}".format(err, l)
+                self.recipes.append((recipe_vector, 1))
 
     def get_ingredient_list(self):
         # return a copy in case someone modify this
