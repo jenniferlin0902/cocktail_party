@@ -32,46 +32,73 @@ def random_permute(target):
         permute[i+j] = swap
     return permute
 
-def trainBiGram(sequences, vocabs):
+def trainBiGram(sequences, depth, vocabs, numPermute):
+    # Generate a start key of the appropriate depth
+    startKey = []
+    for j in range (0, depth):
+        startKey.append(START_CHAR)
+    startKey = tuple(startKey)
     # first build vocab
     transprobs = {}
     lenprobs = collections.defaultdict(float)
-    transprobs[START_CHAR] = collections.defaultdict(float)
-    for v in vocabs:
-        transprobs[v] = collections.defaultdict(float)
     for i in range(len(sequences)):
-        for _ in range(5):
+        # Run trainer on 5 different permutations of the recipe
+        for _ in range(numPermute):
             sequence = random_permute(sequences[i])
-            prevWord = START_CHAR
+            # Start each recipe with a tuple of blank characters
+            prevWords = startKey
             for word in sequence:
-                transprobs[prevWord][word] += 1
-                prevWord = word
-        lenprobs[len(sequence)] += 1
+                # Add nonexistent previous ingredient sequences to dicts
+                if prevWords not in transprobs.keys():
+                        transprobs[prevWords] = collections.defaultdict(float)
+                # Count this ingredient
+                transprobs[prevWords][word] += 1
+                # Add this ingredient to ingredient history
+                prevWords = list(prevWords)
+                prevWords.append(word)
+                # Forget the oldest ingredient
+                prevWords.pop(0)
+                prevWords = tuple(prevWords)
+                lenprobs[len(sequence)] += 1
     return transprobs, lenprobs
 
-def generateFromBiGram(transprob, lenprob):
-    maxlength = weightedRandomChoice(lenprob)
-    print "chose length {}".format(maxlength)
-    output = []
-    word = START_CHAR
-    count = 0
-    while count < maxlength:
-        nextWord = weightedRandomChoice(transprob[word])
-        if nextWord == END_CHAR:
-            break
-        output.append(nextWord)
-        word = nextWord
-        count += 1
+def generateFromBiGram(transprob, lenprob, depth, numRecipes):
+    for _ in range(numRecipes):
+        maxlength = weightedRandomChoice(lenprob)
+        print "chose length {}".format(maxlength)
+        output = []
+        # Create starting key: a tuple of <depth> start characters
+        startKey = []
+        for j in range (0, depth):
+            startKey.append(START_CHAR)
+        startKey = tuple(startKey)
+        word = startKey
+        count = 0
+        while count < maxlength:
+            # Randomly choose the next ingredient
+            nextWord = weightedRandomChoice(transprob[word])
+            if nextWord == END_CHAR:
+                break
+            output.append(nextWord)
+            # Add this ingredient to ingredient history
+            word = list(word)
+            word.append(nextWord)
+            # Forget oldest ingredient
+            word.pop(0)
+            word = tuple(word)
+            count += 1
+        output.append('\n')
     return output
 
-def cluster2recipe(cluster2ingredient, sequence):
+def cluster2recipe(cluster2ingredient, sequence, data):
     output = []
     for s in sequence:
         finding = 1
         while finding:
-            ingredient = random.choice(cluster2ingredient[s])
+            ingredient = weightedRandomChoice(cluster2ingredient[s])
+            unit = random.choice(data.get_ingredient_unit[ingredient])
             if ingredient not in output:
-                output.append(ingredient)
+                output.append(str(unit[0]) + unit[1] + ingredient)
                 finding = 0
     return output
 
@@ -92,20 +119,19 @@ for recipe in data.get_recipes_ingredient_only():
         r.append(cluster)
     tokenized_recipe.append(r)
 
-cluster2ingredient = collections.defaultdict(list)
+cluster2ingredient = collections.defaultdict(dict)
 for ingredient in data.get_ingredient_list():
     if ingredient in ingredient_cluster:
-        cluster2ingredient[ingredient_cluster[ingredient]].append(ingredient)
+        cluster2ingredient[ingredient_cluster[ingredient]][ingredient] = data.ingredients[ingredient][0]
     else:
-        cluster2ingredient[n_cluster].append(ingredient)
+        cluster2ingredient[n_cluster][ingredient] = data.ingredients[ingredient][0]
 
 
-T, L = trainBiGram(tokenized_recipe, range(n_cluster + 1))
-
-print "---- Generating bi gram recipe -----"
-for i in range(10):
-    cluster_recipe = generateFromBiGram(T, L)
-    print ",".join(cluster2recipe(cluster2ingredient, cluster_recipe))
+def printNGramRecipes(data, depth, numPermutations, numRecipes):
+    T, L = trainBiGram(tokenized_recipe, depth, range(n_cluster + 1), numPermutations)
+    print "---- Generating bi gram recipe -----"
+    cluster_recipe = generateFromBiGram(T, L, depth, numRecipes)
+    print ";".join(cluster2recipe(cluster2ingredient, cluster_recipe, data))
 
 #tri_gram = trainNGram(tokenized_recipe, 3)
 #print "---- Generate tri gram recipe ------"
