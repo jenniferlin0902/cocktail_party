@@ -74,12 +74,12 @@ def split_data():
     '''
     helper function to split up recipe text file
     '''
-    n_classifier = 1000
+    n_classifier = 500
     all = range(TOTAL_DATA_SIZE)
     random.shuffle(all)
     classifier = all[:n_classifier]
     count = 0
-    test_out = open("cocktail_medium_random.txt", "w")
+    test_out = open("cocktail_test.txt", "w")
     train_out = open("cocktail_train.txt", "w")
 
     with open("cocktail_all.txt") as f:
@@ -113,40 +113,35 @@ class cocktailData:
     self.ingredients - {ingredient: (frequency, set(unit)}
     self.recipes - list of recipe ingredient vector
     '''
-
     def __init__(self, file, ingredients=None):
+        FREQ_THRESHOLD = 5
         if not os.path.exists(file):
             print "ERROR: training data file {} does not exist".format(file)
             self.raw_data = None
         else:
-            self.raw_data = retrieveData(file, simplifyIngredients=1, removeBranding=1)
-            # fist, parse ingredients
+            self.raw_data = retrieveData(file, useTitles = 0, simplifyIngredients = 1, removeBranding = 1)
             if ingredients == None:
-                self.ingredients = {}
-                for recipe in self.raw_data:
-                    for k, v in recipe.iteritems():
-                        if k not in self.ingredients:
-                            self.ingredients[k] = [0, set([v[1]])] #(count, unit list)
-                        else:
-                        # otherwise, increment count, and keep track of unit
-                            self.ingredients[k][0] += 1
-                            self.ingredients[k][1].add(v[1])
-            # or import from a trained data set
+                self.ingredients = generate_ingredient_dict(file, FREQ_THRESHOLD)
             else:
-                self.ingredients = dict(ingredients)
+                self.ingredients = ingredients
             self.n_recipe = len(self.raw_data)
             self.n_ingredient = len(self.ingredients.keys())
             self.recipes = []
+            print "converting recipe to {} ingredients".format(self.n_ingredient)
             err = 0
             for recipe in self.raw_data:
                 recipe_vector = [0] * self.n_ingredient
+                remove = 0
                 for l in recipe:
                     try:
                         recipe_vector[self.ingredients.keys().index(l)] = 1
                     except:
                         err += 1
-                        print "found weird ingredient {} {}".format(err, l)
-                self.recipes.append((recipe_vector, 1))
+                        print "found rare ingredient {} {}, remove recipe!".format(err, l)
+                        remove = 1
+                        break
+                if not remove:
+                    self.recipes.append((recipe_vector, 1))
 
     def get_ingredient_list(self):
         # return a copy in case someone modify this
@@ -180,3 +175,29 @@ class cocktailData:
 
     def get_ingredient_unit(self, ingredient):
         return self.ingredients[ingredient][2]
+
+def generate_ingredient_dict(file, thereshold):
+    FREQ_THRESHOLD = 5
+    if not os.path.exists(file):
+        print "ERROR: training data file {} does not exist".format(file)
+        raw_data = None
+    else:
+        raw_data = retrieveData(file, simplifyIngredients=1, removeBranding=1)
+        # fist, parse ingredients
+        temp_ingredients = {}
+        for recipe in raw_data:
+            for k, v in recipe.iteritems():
+                if k not in temp_ingredients:
+                    temp_ingredients[k] = [0, set([v[1]])] #(count, unit list)
+                else:
+                        # otherwise, increment count, and keep track of unit
+                    temp_ingredients[k][0] += 1
+                    temp_ingredients[k][1].add(v[1])
+                # remove stuff that is under thereshold
+        ingredients = {}
+        for ingredient in temp_ingredients:
+            if temp_ingredients[ingredient][0] >= FREQ_THRESHOLD:
+                ingredients[ingredient] = temp_ingredients[ingredient]
+        return ingredients
+            # or import from a trained data set
+       
