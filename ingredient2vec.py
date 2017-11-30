@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from gensim.models import word2vec
 from matplotlib.colors import ListedColormap
 import seaborn as sns
-import itertools
 
 PERM_VECTOR = 5
 VECTOR_SIZE = 2
@@ -62,34 +61,34 @@ def train_ingredient2vec(train_data, p_vector=PERM_VECTOR, vector_size=VECTOR_SI
     model.save("freq_{}_word2vec_".format(freq_threshold) + prefix)
     return model
 
+def train_ingredientclusters(ingredient2vec, data, k):
+    kmeans = KMeans(k)
+    ingredients = data.get_ingredient_list()
+    word_vector = {}
+    for i in ingredients:
+        try:
+            word_vector[i] = ingredient2vec[i]
+        except:
+            print "found rare ingredient {}".format(i)
+    ingredient_cluster = kmeans.fit_predict(word_vector.values())
+    return dict(zip(word_vector.keys(), ingredient_cluster))
 
-TRAINING = 1
+TRAINING = 0
 data = cocktailData(TRAIN_DATA)
 prefix = str(PERM_VECTOR) + "_" + str(VECTOR_SIZE) + TRAIN_DATA.strip(".txt")
 
 if TRAINING:
     model = train_ingredient2vec(data)
 else:
-    model = word2vec.Word2Vec.load("some model name here")
+    model = word2vec.Word2Vec.load("freq_6_word2vec_5_15cocktail_all")
 
-word_vector = {}
-ingredients = train_data.get_ingredient_list()
-for i in ingredients:
-    try:
-        word_vector[i] = model[i]
-    except:
-        print "found weird ingredient {}".format(i)
-print "found {} ingrdient with vectors".format(len(word_vector.keys()))
+ingredient_cluster = train_ingredientclusters(model, data, 10)
 
-kmeans = KMeans(20)
-ingredient_cluster = kmeans.fit_predict(word_vector.values())
-print "----- kmean score with {} ingredient, score = {} -----".format(len(word_vector), kmeans.inertia_)
 cat = {}
-print "got {} vectors, got {} ingredient".format(len(word_vector), len(ingredients))
-for i, r in enumerate(ingredient_cluster):
-    if r not in cat:
-        cat[r] = []
-    cat[r].append(word_vector.keys()[i])
+for k, v in ingredient_cluster.iteritems():
+    if v not in cat:
+        cat[v] = []
+    cat[v].append(k)
 
 cat_fd = open("cat_" + prefix + ".txt", 'w')
 for category in cat:
@@ -99,14 +98,17 @@ cat_fd.close()
 
 my_cmap = ListedColormap(sns.color_palette(sns.color_palette("Set1", 20)).as_hex())
 pca_model = pca.PCA(n_components=2)
+word_vector = {}
+for i in data.get_ingredient_list():
+    try:
+        word_vector[i] = model[i]
+    except:
+        pass
+
 pca_result = pca_model.fit_transform(word_vector.values())
-plt.scatter(pca_result[:, 0], pca_result[:, 1], c=ingredient_cluster, cmap=my_cmap)
+plt.scatter(pca_result[:, 0], pca_result[:, 1], c=ingredient_cluster.values())
 plt.title("pca clustering " + prefix)
-words = list(model.wv.vocab)
-for i, word in enumerate(words):
-    pass
-	#plt.annotate(word, xy=(result[i, 0], result[i, 1]))
-#plt.show()
+
 plt.savefig("pca_" + prefix)
 
 
