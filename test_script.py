@@ -1,10 +1,12 @@
 from testing import cocktailSVMClassifier
 from trainerUtil import cocktailData
-from trainerUtil import split_data
+from trainerUtil import split_data, generate_ingredient_dict
 import matplotlib.pyplot as plt
 import random
 
-TRAIN_DATA = 'cocktail_all.txt'
+ALL_DATA = 'cocktail_all.txt'
+TRAIN_DATA = 'cocktail_train.txt'
+TEST_DATA = 'cocktail_test.txt'
 
 def run_classifier_test(train_data):
     test_data = train_data.generate_fake(100)
@@ -12,8 +14,9 @@ def run_classifier_test(train_data):
     clf.train(verbose=1, validate=True)
     print clf.test(test_data)
 
-
-train_data = cocktailData(TRAIN_DATA)
+master_ingredient = generate_ingredient_dict(ALL_DATA, 5)
+train_data = cocktailData(TRAIN_DATA, master_ingredient)
+test_data = cocktailData(TEST_DATA, master_ingredient)
 count = []
 for v in train_data.ingredients.values():
     count.append(v[0])
@@ -33,5 +36,14 @@ for k in train_data.ingredients:
         count += 1
 print "got {} ingredients, {} ingredients have more than one unit".format(train_data.n_ingredient,count)
 
+print "got {} train data".format(train_data.n_recipe)
+
+classifier = cocktailSVMClassifier(train_data)
+classifier.train(train_data)
+test_recipes = ["dt2.txt", "dt3.txt"]
+for test_file in test_recipes:
+	test_data = cocktailData(test_file, master_ingredient)
+	print "got {} test data".format(test_data.n_recipe)
+	print "{} : test accuracy = {}".format(test_file, classifier.test(test_data))
 
 #run_classifier_test(train_data)
