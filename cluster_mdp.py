@@ -1,27 +1,13 @@
 import ingredient2vec
 from gensim.models import word2vec
-from trainerUtil import cocktailData
+from trainerUtil import cocktailData, generate_ingredient_dict
 import collections
 from mdp import weightedRandomChoice
 import joblib, random
 
-TRAIN_DATA = "cocktail_all.txt"
-TRAINING = 0
-PERM_VECTOR = 5
-VECTOR_SIZE = 2
-FREQ = 6
-TRAIN_DATA = 'cocktail_all.txt'
-data = cocktailData(TRAIN_DATA)
-prefix = str(PERM_VECTOR) + "_" + str(VECTOR_SIZE) + TRAIN_DATA.strip(".txt")
-
-if TRAINING:
-    model = ingredient2vec.train_ingredient2vec(data)
-else:
-    model = word2vec.Word2Vec.load("freq_6_word2vec_5_15cocktail_all")
-    ingredient_cluster = joblib.load("cluster_dict")
-
 START_CHAR = "START"
 END_CHAR = "END"
+
 
 def random_permute(target):
     permute = list(target)
@@ -41,6 +27,7 @@ def trainBiGram(sequences, depth, vocabs, numPermute):
     # first build vocab
     transprobs = {}
     lenprobs = collections.defaultdict(float)
+    print "training {} gram on {} sequences".format(depth, len(sequences))
     for i in range(len(sequences)):
         # Run trainer on 5 different permutations of the recipe
         for _ in range(numPermute):
@@ -63,6 +50,7 @@ def trainBiGram(sequences, depth, vocabs, numPermute):
     return transprobs, lenprobs
 
 def generateFromBiGram(transprob, lenprob, depth, numRecipes):
+    outputs = []
     for _ in range(numRecipes):
         maxlength = weightedRandomChoice(lenprob)
         print "chose length {}".format(maxlength)
@@ -76,7 +64,11 @@ def generateFromBiGram(transprob, lenprob, depth, numRecipes):
         count = 0
         while count < maxlength:
             # Randomly choose the next ingredient
-            nextWord = weightedRandomChoice(transprob[word])
+            try:
+                nextWord = weightedRandomChoice(transprob[word])
+            except:
+                print "error"
+                break
             if nextWord == END_CHAR:
                 break
             output.append(nextWord)
@@ -86,27 +78,60 @@ def generateFromBiGram(transprob, lenprob, depth, numRecipes):
             # Forget oldest ingredient
             word.pop(0)
             word = tuple(word)
-            count += 1
-        output.append('\n')
-    return output
+            count += 1   
+        outputs.append(output)   
+    return outputs
 
 def cluster2recipe(cluster2ingredient, sequence, data):
     output = []
     for s in sequence:
         finding = 1
         while finding:
+            if cluster2ingredient[s] == {}:
+                print "Got empty cluster {}".format(s)
+                break
+
             ingredient = weightedRandomChoice(cluster2ingredient[s])
-            unit = random.choice(data.get_ingredient_unit[ingredient])
+            unit = random.choice(list(data.get_ingredient_unit(ingredient)))
+
             if ingredient not in output:
-                output.append(str(unit[0]) + unit[1] + ingredient)
+                output.append(str(unit[0]) + " " + unit[1] + " " + ingredient)
                 finding = 0
     return output
 
-n_cluster = 20
+def generateNGramRecipes(data, depth, numPermutations, numRecipes, tokenized_recipe, cluster2ingredient):
+    T, L = trainBiGram(tokenized_recipe, depth, range(n_cluster + 1), numPermutations)
+    print "---- Generating {} gram recipe -----".format(depth)
+    cluster_recipe = generateFromBiGram(T, L, depth, numRecipes)
+    recipes = []    
+    for r in cluster_recipe:
+        recipes.append(cluster2recipe(cluster2ingredient, r, data))
+    return recipes
+
+
+
+ALL_DATA = 'cocktail_all.txt'
+TRAIN_DATA = "cocktail_train.txt"
+TRAINING = 1
+PERM_VECTOR = 8
+VECTOR_SIZE = 10
+master_ingredient = generate_ingredient_dict(ALL_DATA, 5) 
+data = cocktailData(TRAIN_DATA, master_ingredient)
+
+prefix = str(PERM_VECTOR) + "_" + str(VECTOR_SIZE) + TRAIN_DATA.strip(".txt")
+if TRAINING:
+    model = ingredient2vec.train_ingredient2vec(data, p_vector=8, vector_size=10, freq_threshold=1)
+else:
+    model = word2vec.Word2Vec.load("freq_6_word2vec_5_15cocktail_all")
+    ingredient_cluster = joblib.load("cluster_dict")
+
+n_cluster = 50
 ingredient_cluster = ingredient2vec.train_ingredientclusters(model, data, n_cluster)
-joblib.dump(ingredient_cluster, "cluster_dict_20")
+# joblib.dump(ingredient_cluster, "cluster_dict_20")
 #print ingredient_cluster
 # generate recipe with cluster tag
+print "done clustering"
+
 tokenized_recipe = []
 for recipe in data.get_recipes_ingredient_only():
     r = []
@@ -126,12 +151,18 @@ for ingredient in data.get_ingredient_list():
     else:
         cluster2ingredient[n_cluster][ingredient] = data.ingredients[ingredient][0]
 
+for d in [2,3,4,5]:
+    file = "cluster_dt{}_v2_perm5_cluster50.txt".format(d)
+    f = open(file, 'w')
+    clusted_mdp_recipe = generateNGramRecipes(data, d, 5, 50, tokenized_recipe, cluster2ingredient)
+    for r in clusted_mdp_recipe:
+        output = "TITLE: "+";".join(r)+"\n"
+        print output 
+        f.write(output)
+    f.close()
 
-def printNGramRecipes(data, depth, numPermutations, numRecipes):
-    T, L = trainBiGram(tokenized_recipe, depth, range(n_cluster + 1), numPermutations)
-    print "---- Generating bi gram recipe -----"
-    cluster_recipe = generateFromBiGram(T, L, depth, numRecipes)
-    print ";".join(cluster2recipe(cluster2ingredient, cluster_recipe, data))
+
+
 
 #tri_gram = trainNGram(tokenized_recipe, 3)
 #print "---- Generate tri gram recipe ------"

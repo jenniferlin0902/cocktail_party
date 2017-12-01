@@ -40,10 +40,26 @@ print "got {} train data".format(train_data.n_recipe)
 
 classifier = cocktailSVMClassifier(train_data)
 classifier.train(train_data)
-test_recipes = ["dt2.txt", "dt3.txt"]
+
+fake_test_data = train_data.generate_fake(500)
+print "{} : test accuracy = {}".format(TEST_DATA, classifier.test(test_data))
+fake_x = []
+fake_y = []
+for x, y in fake_test_data:
+	fake_x.append(x)
+	fake_y.append(y)
+print "test accuracy on 500 fake data = {}".format(classifier.test(fake_x, y=fake_y))
+
+print "----- testing raw mdp data -----"
+test_recipes = ["dt2.txt", "dt3.txt", "dt4.txt", "dt5.txt"]
 for test_file in test_recipes:
 	test_data = cocktailData(test_file, master_ingredient)
-	print "got {} test data".format(test_data.n_recipe)
+	print "{} : test accuracy = {}".format(test_file, classifier.test(test_data))
+
+print "----- testing cluster mdp data -----" 
+test_recipes = ["cluster_dt2.txt", "cluster_dt3.txt", "cluster_dt4.txt", "cluster_dt5.txt"]
+for test_file in test_recipes:
+	test_data = cocktailData(test_file, master_ingredient)
 	print "{} : test accuracy = {}".format(test_file, classifier.test(test_data))
 
 #run_classifier_test(train_data)
