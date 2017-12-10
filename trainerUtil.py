@@ -9,8 +9,16 @@ Utilities for use in developing cocktail recipe generator
 import re
 import random
 import os
+import numpy as np
 
 TOTAL_DATA_SIZE = 5568
+bucket_threshold = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+
+def qty2bucket(qty):
+    for i, threshold in enumerate(bucket_threshold):
+        if qty < threshold:
+            return i + 1
+    return len(bucket_threshold) + 1
 
 def retrieveData(inputFile, useTitles = 0, simplifyIngredients = 1, removeBranding = 1):
     """
@@ -115,33 +123,43 @@ class cocktailData:
     '''
     def __init__(self, file, ingredients=None):
         FREQ_THRESHOLD = 5
+        self.big_unit = ["q", "pt", "gal"]
+        self.small_unit = ["ds", "twst", "pn", "twst", "lf",
+                      "spg", "dr", "rinse", "cube", "wdg", "sli", "spl",
+                      "\xc2\xa0", "sh"]
+        self.oz_conversion = {"t": 0.5, "bsp": 1 / float(12), "T": 0.5, "pt": 16, "c": 8, "jig": 1.5, "q": 32, "gal": 128,
+                         "gl": 128}
         if not os.path.exists(file):
             print "ERROR: training data file {} does not exist".format(file)
             self.raw_data = None
         else:
-            self.raw_data = retrieveData(file, useTitles = 0, simplifyIngredients = 1, removeBranding = 1)
+            raw_data = retrieveData(file, useTitles = 0, simplifyIngredients = 1, removeBranding = 1)
             if ingredients == None:
                 self.ingredients = generate_ingredient_dict(file, FREQ_THRESHOLD)
             else:
                 self.ingredients = ingredients
-            self.n_recipe = len(self.raw_data)
+            
             self.n_ingredient = len(self.ingredients.keys())
             self.recipes = []
             print "converting recipe to {} ingredients".format(self.n_ingredient)
             err = 0
-            for recipe in self.raw_data:
+            self.raw_data = []
+            for recipe in raw_data:
                 recipe_vector = [0] * self.n_ingredient
-                remove = 0
+                remove = False
                 for l in recipe:
                     try:
                         recipe_vector[self.ingredients.keys().index(l)] = 1
                     except:
                         err += 1
-                        print "found rare ingredient {} {}, remove recipe!".format(err, l)
-                        remove = 1
+                        #print "found rare ingredient {}, remove recipe!".format(err, l)
+                        remove = True
                         break
                 if not remove:
                     self.recipes.append((recipe_vector, 1))
+                    self.raw_data.append(recipe)
+
+            self.n_recipe = len(self.recipes)
 
     def get_ingredient_list(self):
         # return a copy in case someone modify this
@@ -162,19 +180,46 @@ class cocktailData:
     def get_recipes_binary_x(self):
         return list([r[0] for r in self.recipes])
 
-    def generate_fake(self, n):
+    def generate_fake(self, n, binary=True):
         num_ingredients = [3,4,5,6]
         fakes = []
+        buckets = range(1, len(bucket_threshold)+2)
         for _ in range(n):
             n_ingredient = random.choice(num_ingredients)
             recipe_vector = [0] * self.n_ingredient
             for i in range(n_ingredient):
-                recipe_vector[random.choice(range(self.n_ingredient))] = 1
-            fakes.append((recipe_vector, 0))
+                if binary:
+                    recipe_vector[random.choice(range(self.n_ingredient))] = 1
+                else:
+                    recipe_vector[random.choice(range(self.n_ingredient))] = random.choice(buckets)
+            fakes.append(recipe_vector)
         return fakes
 
+    def get_recipe_bucketed(self):
+        bucketed_recipes = []
+        ingredient_list = self.get_ingredient_list()
+        for r in self.raw_data:
+            normalize = 1
+            bucketed_recipe = {}
+            for i, ingredient in enumerate(r):
+                qty, unit = r[ingredient]
+                if unit in self.big_unit:
+                    normalize = self.oz_conversion[unit] / 1.5  # assume 1.5 oz for standard drink
+                if unit == "oz" or unit in self.oz_conversion:
+                    # convert to oz
+                    if unit != "oz":
+                        qty = qty * self.oz_conversion[unit] / normalize
+                    else:
+                        qty = qty / normalize
+                    bucket = qty2bucket(qty)
+                elif unit in self.small_unit:
+                    bucket = 1
+                bucketed_recipe[ingredient_list.index(ingredient)] = bucket
+            bucketed_recipes.append(bucketed_recipe)
+        return bucketed_recipes
+
     def get_ingredient_unit(self, ingredient):
-        return self.ingredients[ingredient][2]
+        return self.ingredients[ingredient][1]
 
 def generate_ingredient_dict(file, thereshold):
     FREQ_THRESHOLD = 5
@@ -188,16 +233,16 @@ def generate_ingredient_dict(file, thereshold):
         for recipe in raw_data:
             for k, v in recipe.iteritems():
                 if k not in temp_ingredients:
-                    temp_ingredients[k] = [0, set([v[1]])] #(count, unit list)
-                else:
+                    temp_ingredients[k] = [0, set()] #(count, unit list)
                         # otherwise, increment count, and keep track of unit
-                    temp_ingredients[k][0] += 1
-                    temp_ingredients[k][1].add(v[1])
+                temp_ingredients[k][0] += 1
+                temp_ingredients[k][1].add(v)
                 # remove stuff that is under thereshold
         ingredients = {}
         for ingredient in temp_ingredients:
             if temp_ingredients[ingredient][0] >= FREQ_THRESHOLD:
                 ingredients[ingredient] = temp_ingredients[ingredient]
+        print "Got {} ingredient".format(len(ingredients))
         return ingredients
             # or import from a trained data set
        
