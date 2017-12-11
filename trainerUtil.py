@@ -10,6 +10,7 @@ import re
 import random
 import os
 import numpy as np
+import collections
 
 TOTAL_DATA_SIZE = 5568
 bucket_threshold = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
@@ -197,7 +198,11 @@ class cocktailData:
 
     def get_recipe_bucketed(self):
         bucketed_recipes = []
+        # create dictionaries to convert back from buckets
+        bucket_conversion = {}
         ingredient_list = self.get_ingredient_list()
+        for ingredient in ingredient_list:
+            bucket_conversion[ingredient] = collections.defaultdict(list)
         for r in self.raw_data:
             normalize = 1
             bucketed_recipe = {}
@@ -215,8 +220,9 @@ class cocktailData:
                 elif unit in self.small_unit:
                     bucket = 1
                 bucketed_recipe[ingredient_list.index(ingredient)] = bucket
+                bucket_conversion[ingredient][bucket].append((qty, unit))
             bucketed_recipes.append(bucketed_recipe)
-        return bucketed_recipes
+        return bucketed_recipes, bucket_conversion
 
     def get_ingredient_unit(self, ingredient):
         return self.ingredients[ingredient][1]
