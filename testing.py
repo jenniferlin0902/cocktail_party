@@ -1,5 +1,50 @@
 from sklearn import svm
 from sklearn.model_selection import cross_val_score
+from trainerUtil import split_data, generate_ingredient_dict, cocktailData
+import numpy as np
+import joblib
+import math
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import normalize
+
+def combination2index(i1, i2):
+    if i1 > i2:
+        return sum(range(i1-1)) + i2
+    else:
+        return sum(range(i2-1)) + i2
+
+def featureExtract(bucketed_recipes, ingredient_list, top_ingredients):
+    multi_feature_recipes = []
+    single_features_recipes = []
+    for r in bucketed_recipes:
+        multi_features = np.zeros(sum(range(len(top_ingredients))))
+        single_features = np.zeros(len(ingredient_list))
+        for i1, q1 in r.iteritems():
+            for i2, q2 in r.iteritems():
+                if i1 in top_ingredients and i2 in top_ingredients:
+                    multi_features[combination2index(top_ingredients.index(i1), top_ingredients.index(i2))] = q1 + q2
+            single_features[i1] = r[i1]
+        features = np.append(single_features , multi_features)
+        multi_feature_recipes.append(features)
+        single_features_recipes.append(single_features)
+    return normalize(multi_feature_recipes), normalize(single_features_recipes)
+
+def sparse2vector(sparse_recipes, n):
+    recipes = []
+    for r in sparse_recipes:
+        recipe = [0 for _ in range(n)]
+        for i in r:
+            recipe[i] = r[i]
+        recipes.append(recipe)
+    return recipes
+
+
+def cocktailData2ProductFeature(data, binary=True):
+    ingredients = data.get_ingredient_list()
+    for r in data.raw_data:
+        print r
+        exit()
 
 class cocktailSVMClassifier:
     '''
@@ -13,9 +58,12 @@ class cocktailSVMClassifier:
     '''
     def __init__(self, train_data, k='rbf'):
         self.data = train_data
-        self.clf = svm.SVC()
+        self.clf = None
+        self.top_n_ingredient = []
 
-    def train(self, verbose=0, validate=0):
+
+
+    def train_clf_raw(self, verbose=0, validate=1):
         n_fake = self.data.n_recipe
         train= self.data.get_recipes_binary() + self.data.generate_fake(n_fake)
         print "--- training svm with {} real data and {} fake data ---".format(self.data.n_recipe, n_fake)
@@ -30,11 +78,33 @@ class cocktailSVMClassifier:
         print "--- done training svm classifier ---"
         return score
 
+    def train_clf_comb(self, c=20):
+        train_data = self.data
+        self.top_n_ingredient = [self.data.get_ingredient_list().index(i) for i in train_data.find_top_n(40)]
+
+        ingredient_list = train_data.get_ingredient_list()
+        top_n_ingredient = [ingredient_list.index(i) for i in train_data.find_top_n(40)]
+        bucketed_train_no_fake = train_data.get_recipe_bucketed()[0]
+        bucketed_train = bucketed_train_no_fake + train_data.generate_fake_sparse(train_data.n_recipe, binary=False)
+        train_multi_features, train_single_features = featureExtract(bucketed_train,
+                                                                     train_data.get_ingredient_list(),
+                                                                     self.top_n_ingredient)
+
+        train_y = np.append(np.ones(train_data.n_recipe), np.zeros(train_data.n_recipe))
+        self.clf = svm.SVC(kernel='rbf', C=c)
+        self.clf.fit(train_multi_features, y=train_y)
+        correct_count = 0
+        for i, y in enumerate(self.clf.predict(train_multi_features)):
+            if y == train_y[i]:
+                correct_count += 1
+        avg_val_score = 1 - correct_count / float(len(train_multi_features))
+        print "Trained clf with train error = {}".format(avg_val_score)
+
     '''
     if y == None, assume its a cocktailData type
     else, x, and y should be an array
     '''
-    def test(self, data, y=None):
+    def test_raw(self, data, y=None):
         if y:
             test_x = data
             test_y = y
@@ -49,12 +119,176 @@ class cocktailSVMClassifier:
                 err += 1
         return 1-err/float(len(test_x))
 
+    def test_comb(self, data):
+        bucketed_test = data.get_recipe_bucketed()[0]
+        test_multi_features, test_single_features = featureExtract(bucketed_test,
+                                                                   data.get_ingredient_list(),
+                                                                   self.top_n_ingredient)
+        predict = self.clf.predict(test_multi_features)
+        return sum(predict)/data.n_recipe
+
     def classify(self, x):
         return self.clf.predict(x)
 
+'''
+This part of scripts are used to parameter selections for SVM classifier. 
+It compares and plot the test/training errors for different c and kernels.
+'''
+
+'''
+# -- common data set -- #
+ALL_DATA = 'cocktail_all.txt'
+TRAIN_DATA = 'cocktail_train.txt'
+TEST_DATA = 'cocktail_test.txt'
+
+master_ingredient = generate_ingredient_dict(ALL_DATA, 5)
+train_data = cocktailData(TRAIN_DATA, master_ingredient)
+test_data = cocktailData(TEST_DATA, master_ingredient)
 
 
 
+ingredient_list = train_data.get_ingredient_list()
+top_n_ingredient = [ingredient_list.index(i) for i in train_data.find_top_n(40)]
+bucketed_train_no_fake = train_data.get_recipe_bucketed()[0]
+bucketed_train = bucketed_train_no_fake + train_data.generate_fake_sparse(train_data.n_recipe, binary=False)
+bucketed_test = test_data.get_recipe_bucketed()[0] + train_data.generate_fake_sparse(test_data.n_recipe, binary=False)
+train_multi_features, train_single_features = featureExtract(bucketed_train,
+                                                             train_data.get_ingredient_list(),
+                                                             top_n_ingredient)
+test_multi_features, test_single_features = featureExtract(bucketed_test,
+                                                           test_data.get_ingredient_list(),
+                                                           top_n_ingredient)
 
+train_y = np.append(np.ones(train_data.n_recipe), np.zeros(train_data.n_recipe))
+test_y = list(np.append(np.ones(test_data.n_recipe), np.zeros(test_data.n_recipe)))
 
+#train_x_no_fake = sparse2vector(bucketed_train_no_fake, train_data.n_ingredient)
+#train_x = sparse2vector(bucketed_train, train_data.n_ingredient)
 
+color = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown','tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
+marker = [ '+' , ',' , '.' , '1' , '2' , '3' , '4' ]
+c_fake = [0.5, 1, 5, 10, 20, 30, 40]
+C = [20]
+# ---- This part of code test multi feature classifier --- #
+test_scores = [0.36,0.3605, 0.1241, 0.1158, 0.098, 0.1, 0.098]
+val_scores = [0.3589, 0.3589, 0.1386, 0.1159, 0.098, 0.094, 0.09]
+
+for c in C:
+    print "training with c= {}".format(c)
+    clf = svm.SVC(kernel='rbf', C=c)
+    clf.fit(train_multi_features, y=train_y)
+    predict = clf.predict(test_multi_features)
+    correct_count = 0
+    true_correct_count = 0
+    fake_correct_count = 0
+    for i, y in enumerate(predict):
+        if y == test_y[i]:
+            if i < test_data.n_recipe:
+                true_correct_count+=1
+            else:
+                fake_correct_count+=1
+            correct_count += 1
+    test_score = 1-correct_count/float(len(predict))
+    correct_count = 0
+
+    for i, y in enumerate(clf.predict(train_multi_features)):
+        if y == train_y[i]:
+
+            correct_count += 1
+    avg_val_score = 1-correct_count/float(len(train_multi_features))
+    print "test score = {}, val score = {}".format(test_score, avg_val_score)
+    print "{} real test is correct,, {} fake test is correct".format(true_correct_count/float(test_data.n_recipe)
+                                                                     ,fake_correct_count/float(test_data.n_recipe))
+    test_scores.append(test_score)
+    val_scores.append(avg_val_score)
+
+plt.plot(c_fake, test_scores, '-', c=color[0], label="test multi")
+plt.plot(c_fake, val_scores, '*-', c=color[1], label="train multi")
+plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+plt.title("multi feature SVM")
+plt.xlabel("C coefficient")
+plt.ylabel("Error")
+plt.savefig("testing_multi_big2", bbox_inches='tight')
+exit()
+
+# -- This part of code test PCA classifier --#
+
+train_y = np.append(np.ones(train_data.n_recipe), np.zeros(train_data.n_recipe))
+train_x_no_fake = sparse2vector(bucketed_train_no_fake, train_data.n_ingredient)
+train_x = sparse2vector(bucketed_train, train_data.n_ingredient)
+
+test_x = sparse2vector(bucketed_test, train_data.n_ingredient)
+test_y = list(np.append(np.ones(test_data.n_recipe), np.zeros(test_data.n_recipe)))
+
+N = [35,50, 75, 100, 150, 200]
+C = [0.1, 1, 1.5, 2.5, 10, 20]
+
+color = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown','tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
+marker = [ '+' , ',' , '.' , '1' , '2' , '3' , '4' ]
+k = 0
+for n in N:
+    val_scores = []
+    test_scores = []
+    pca = PCA(n_components=n)
+#print "converting association features "
+#print train_x
+    pca.fit(train_x_no_fake)
+    reduced_train = pca.transform(train_x)
+    reduced_test = pca.transform(test_x)
+    print reduced_train.shape
+    print "pca score {} for n = {}".format(pca.score(train_x), n)
+    for c in C:
+        print "training with (c, n) = {}, {}".format(c, n)
+        clf = svm.SVC(kernel='rbf', C=c)
+        #val_score = cross_val_score(clf, reduced_train, y=train_y, cv=5, verbose=1)
+        clf.fit(reduced_train, y=train_y)
+        joblib.dump(clf, "clf_bucket_{}_{}".format(c, n))
+        predict = clf.predict(reduced_test)
+        correct_count = 0
+        for i, y in enumerate(predict):
+            if y == test_y[i]:
+                correct_count += 1
+        test_score = 1-correct_count/float(len(predict))
+        correct_count = 0
+        for i, y in enumerate(clf.predict(reduced_train)):
+            if y == train_y[i]:
+                correct_count += 1
+        avg_val_score = 1-correct_count/float(len(train_y))
+        print "test score = {}, val score = {}".format(test_score, avg_val_score)
+        test_scores.append(test_score)
+        val_scores.append(avg_val_score)
+    plt.plot(C, test_scores, '-', c=color[k], label="test n = {}".format(n))
+    plt.plot(C, val_scores, '*-', c=color[k], label="train n = {}".format(n))
+    k += 1
+val_scores = []
+test_scores = []
+for c in C:
+    print "training with (c, n) = {}, {}".format(c, n)
+    clf = svm.SVC(kernel='rbf', C=c)
+    #val_score = cross_val_score(clf, reduced_train, y=train_y, cv=5, verbose=1)
+    clf.fit(train_x, y=train_y)
+    joblib.dump(clf, "clf_bucket_{}_{}".format(c, n))
+    predict = clf.predict(test_x)
+    correct_count = 0
+    for i, y in enumerate(predict):
+        if y == test_y[i]:
+            correct_count += 1
+    test_score = 1-correct_count/float(len(predict))
+    correct_count = 0
+    for i, y in enumerate(clf.predict(train_x)):
+        if y == train_y[i]:
+            correct_count += 1
+    avg_val_score = 1-correct_count/float(len(train_x))
+    print "test score = {}, val score = {}".format(test_score, avg_val_score)
+    test_scores.append(test_score)
+    val_scores.append(avg_val_score)
+plt.plot(c_fake + C, test_scores, '-', c=color[k], label="test raw".format(n))
+plt.plot(c_fake + C, val_scores, '*-', c=color[k], label="train raw".format(n))
+plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+plt.title('Training and Test error for rbf SVM classifier on reduced features')
+plt.xlabel("C coefficient")
+plt.ylabel("Error")
+plt.savefig("testing_rbf",bbox_inches='tight')
+
+exit()
+'''

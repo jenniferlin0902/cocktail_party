@@ -4,7 +4,6 @@ Created on Sat Nov 04 13:17:38 2017
 
 Utilities for use in developing cocktail recipe generator
 
-@author: Suzannah
 """
 import re
 import random
@@ -181,6 +180,18 @@ class cocktailData:
     def get_recipes_binary_x(self):
         return list([r[0] for r in self.recipes])
 
+    def generate_fake_sparse(self, n, binary=True):
+        num_ingredients = [3,4,5,6]
+        fakes = []
+        buckets = range(1, len(bucket_threshold) + 2)
+        for _ in range(n):
+            recipe = {}
+            n_ingredient = random.choice(num_ingredients)
+            for i in range(n_ingredient):
+                recipe[random.choice(range(self.n_ingredient))] = random.choice(buckets)
+            fakes.append(recipe)
+        return fakes
+
     def generate_fake(self, n, binary=True):
         num_ingredients = [3,4,5,6]
         fakes = []
@@ -223,6 +234,17 @@ class cocktailData:
                 bucket_conversion[ingredient][bucket].append((qty, unit))
             bucketed_recipes.append(bucketed_recipe)
         return bucketed_recipes, bucket_conversion
+
+    def find_top_n(self, n):
+        count = 0
+        top_ingredients = []
+        sorted_ingredient = sorted(self.ingredients.iteritems(), key=lambda (k, v): (v[0], k))
+        for ingredient in reversed(sorted_ingredient):
+            top_ingredients.append(ingredient[0])
+            count += 1
+            if count >= n:
+                break
+        return top_ingredients
 
     def get_ingredient_unit(self, ingredient):
         return self.ingredients[ingredient][1]
