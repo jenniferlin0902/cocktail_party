@@ -115,6 +115,8 @@ TRAIN_DATA = "cocktail_train.txt"
 TRAINING = 1
 PERM_VECTOR = 8
 VECTOR_SIZE = 10
+N_CLUSTER = 50
+
 master_ingredient = generate_ingredient_dict(ALL_DATA, 5) 
 data = cocktailData(TRAIN_DATA, master_ingredient)
 
@@ -125,8 +127,8 @@ else:
     model = word2vec.Word2Vec.load("freq_6_word2vec_5_15cocktail_all")
     ingredient_cluster = joblib.load("cluster_dict")
 
-n_cluster = 50
-ingredient_cluster = ingredient2vec.train_ingredientclusters(model, data, n_cluster)
+
+ingredient_cluster = ingredient2vec.train_ingredientclusters(model, data, N_CLUSTER)
 # joblib.dump(ingredient_cluster, "cluster_dict_20")
 #print ingredient_cluster
 # generate recipe with cluster tag
@@ -140,7 +142,7 @@ for recipe in data.get_recipes_ingredient_only():
             cluster = ingredient_cluster[ingredient]
         else:
             # dump all rare ingredients to a cluster
-            cluster = n_cluster
+            cluster = N_CLUSTER
         r.append(cluster)
     tokenized_recipe.append(r)
 
@@ -149,15 +151,14 @@ for ingredient in data.get_ingredient_list():
     if ingredient in ingredient_cluster:
         cluster2ingredient[ingredient_cluster[ingredient]][ingredient] = data.ingredients[ingredient][0]
     else:
-        cluster2ingredient[n_cluster][ingredient] = data.ingredients[ingredient][0]
+        cluster2ingredient[N_CLUSTER][ingredient] = data.ingredients[ingredient][0]
 
-for d in [2,3,4,5]:
-    file = "cluster_dt{}_v2_perm5_cluster50.txt".format(d)
+for d in [2,3,4]:
+    file = "cluster_dt{}_v2_perm20_cluster50.txt".format(d)
     f = open(file, 'w')
-    clusted_mdp_recipe = generateNGramRecipes(data, d, 5, 50, tokenized_recipe, cluster2ingredient)
+    clusted_mdp_recipe = generateNGramRecipes(data, d, 20, 50, tokenized_recipe, cluster2ingredient)
     for r in clusted_mdp_recipe:
         output = "TITLE: "+";".join(r)+"\n"
-        print output 
         f.write(output)
     f.close()
 
